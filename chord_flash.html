@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>コード暗記フラッシュ</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    color: #fff;
+    font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  #progress {
+    position: fixed;
+    top: 24px;
+    font-size: 1.3rem;
+    color: #555;
+    letter-spacing: 0.1em;
+  }
+
+  #card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  #chord-name {
+    font-size: 11rem;
+    font-weight: 900;
+    color: #e94560;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 60px rgba(233,69,96,0.35);
+  }
+  #chord-name.minor {
+    color: #4fc3f7;
+    text-shadow: 0 0 60px rgba(79,195,247,0.35);
+  }
+
+  #timer-bar {
+    width: 280px;
+    height: 5px;
+    background: #2a2a4a;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #timer-fill {
+    height: 100%;
+    width: 100%;
+    background: #e94560;
+    border-radius: 3px;
+    transform-origin: left;
+    transition: transform 1s linear;
+  }
+  #timer-fill.minor  { background: #4fc3f7; }
+  #timer-fill.shrink { transform: scaleX(0); }
+
+  #notes {
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: #f0f0f0;
+    letter-spacing: 0.15em;
+    min-height: 4.2rem;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  #notes.visible { opacity: 1; transform: translateY(0); }
+
+  #piano-wrap {
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.4s ease 0.08s, transform 0.4s ease 0.08s;
+    margin-top: 4px;
+  }
+  #piano-wrap.visible { opacity: 1; transform: translateY(0); }
+
+  #hint {
+    position: fixed;
+    bottom: 40px;
+    font-size: 1rem;
+    color: #404060;
+  }
+
+  #loading {
+    position: fixed;
+    bottom: 18px;
+    font-size: 0.85rem;
+    color: #556;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── Complete screen ── */
+  #complete {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    text-align: center;
+  }
+  #complete h2 { font-size: 4rem; color: #f6d860; }
+  #complete p  { font-size: 1.6rem; color: #888; }
+  #restart-btn {
+    padding: 16px 56px;
+    font-size: 1.4rem;
+    background: #e94560;
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #restart-btn:hover { background: #c73652; }
+</style>
+</head>
+<body>
+
+<div id="progress">1 / 14</div>
+
+<div id="card">
+  <div id="chord-name">C</div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+  <div id="notes">ドミソ</div>
+  <div id="piano-wrap"><canvas id="piano"></canvas></div>
+</div>
+
+<div id="complete">
+  <h2>完了！</h2>
+  <p>全14コード クリア</p>
+  <button id="restart-btn">もう一度</button>
+</div>
+
+<div id="hint">スペース or クリックで次へ</div>
+<div id="loading">♪ ピアノ音源 読み込み中...</div>
+
+<!-- Tone.js CDN -->
+<script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+
+<script>
+// ─────────────────────────────────────────────
+// Chord data  (MIDI: C4=60)
+// ─────────────────────────────────────────────
+const chords = [
+  { name:'C',  notes:'ドミソ',       midi:[60,64,67], minor:false },
+  { name:'Cm', notes:'ドミ♭ソ',     midi:[60,63,67], minor:true  },
+  { name:'D',  notes:'レファ♯ラ',   midi:[62,66,69], minor:false },
+  { name:'Dm', notes:'レファラ',     midi:[62,65,69], minor:true  },
+  { name:'E',  notes:'ミソ♯シ',     midi:[64,68,71], minor:false },
+  { name:'Em', notes:'ミソシ',       midi:[64,67,71], minor:true  },
+  { name:'F',  notes:'ファラド',     midi:[65,69,72], minor:false },
+  { name:'Fm', notes:'ファラ♭ド',   midi:[65,68,72], minor:true  },
+  { name:'G',  notes:'ソシレ',       midi:[67,71,74], minor:false },
+  { name:'Gm', notes:'ソシ♭レ',     midi:[67,70,74], minor:true  },
+  { name:'A',  notes:'ラド♯ミ',     midi:[69,73,76], minor:false },
+  { name:'Am', notes:'ラドミ',       midi:[69,72,76], minor:true  },
+  { name:'B',  notes:'シレ♯ファ♯',  midi:[71,75,78], minor:false },
+  { name:'Bm', notes:'シレファ♯',   midi:[71,74,78], minor:true  },
+];
+
+// ─────────────────────────────────────────────
+// Piano keyboard drawing (C4=60 … B5=83)
+// ─────────────────────────────────────────────
+const WW = 42, WH = 140;
+const BW = 26, BH = 90;
+const KB_START = 60, KB_END = 83;
+
+const SEMITONE = [
+  {t:'w', x:0   }, // C
+  {t:'b', x:0.63}, // C#
+  {t:'w', x:1   }, // D
+  {t:'b', x:1.73}, // D#
+  {t:'w', x:2   }, // E
+  {t:'w', x:3   }, // F
+  {t:'b', x:3.60}, // F#
+  {t:'w', x:4   }, // G
+  {t:'b', x:4.66}, // G#
+  {t:'w', x:5   }, // A
+  {t:'b', x:5.73}, // A#
+  {t:'w', x:6   }, // B
+];
+
+function keyX(midi) {
+  const s   = midi % 12;
+  const oct = Math.floor(midi / 12) - 1;
+  const off = (oct - 4) * 7;
+  const info = SEMITONE[s];
+  return info.t === 'w'
+    ? { t:'w', px: (off + info.x) * WW }
+    : { t:'b', px: (off + info.x) * WW - BW / 2 };
+}
+
+function initCanvas() {
+  const canvas = document.getElementById('piano');
+  canvas.width  = 14 * WW;
+  canvas.height = WH;
+}
+
+function drawPiano(highlightMidi, accent) {
+  const canvas = document.getElementById('piano');
+  const ctx    = canvas.getContext('2d');
+  const hl     = new Set(highlightMidi);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let m = KB_START; m <= KB_END; m++) {
+    if (SEMITONE[m % 12].t !== 'w') continue;
+    const { px } = keyX(m);
+    const lit    = hl.has(m);
+    ctx.fillStyle   = lit ? '#fff0f3' : '#f5f5f5';
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth   = 1;
+    ctx.fillRect(px, 0, WW - 1, WH);
+    ctx.strokeRect(px, 0, WW - 1, WH);
+    if (lit) {
+      ctx.beginPath();
+      ctx.arc(px + (WW-1)/2, WH - 22, 13, 0, Math.PI*2);
+      ctx.fillStyle = accent;
+      ctx.fill();
+    }
+  }
+
+  for (let m = KB_START; m <= KB_END; m++) {
+    if (SEMITONE[m % 12].t !== 'b') continue;
+    const { px } = keyX(m);
+    const lit    = hl.has(m);
+    ctx.fillStyle = lit ? '#1a3a5a' : '#1e1e1e';
+    ctx.fillRect(px, 0, BW, BH);
+    if (lit) {
+      ctx.beginPath();
+      ctx.arc(px + BW/2, BH - 14, 9, 0, Math.PI*2);
+      ctx.fillStyle = accent;
+      ctx.fill();
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// Audio – Tone.js + Salamander Grand Piano
+// ─────────────────────────────────────────────
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiToNote(m) {
+  return NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1);
+}
+
+let samplerReady = false;
+const sampler = new Tone.Sampler({
+  urls: {
+    'C3':'C3.mp3',  'D#3':'Ds3.mp3', 'F#3':'Fs3.mp3', 'A3':'A3.mp3',
+    'C4':'C4.mp3',  'D#4':'Ds4.mp3', 'F#4':'Fs4.mp3', 'A4':'A4.mp3',
+    'C5':'C5.mp3',  'D#5':'Ds5.mp3', 'F#5':'Fs5.mp3', 'A5':'A5.mp3',
+    'C6':'C6.mp3',
+  },
+  release: 3,
+  baseUrl: 'https://tonejs.github.io/audio/salamander/',
+  onload: () => {
+    samplerReady = true;
+    document.getElementById('loading').style.display = 'none';
+  },
+}).toDestination();
+
+async function playChord(midiList) {
+  await Tone.start();
+  if (!samplerReady) return;
+  sampler.triggerAttackRelease(midiList.map(midiToNote), 2.5);
+}
+
+// ─────────────────────────────────────────────
+// Flashcard logic
+// ─────────────────────────────────────────────
+const chordEl    = document.getElementById('chord-name');
+const notesEl    = document.getElementById('notes');
+const fillEl     = document.getElementById('timer-fill');
+const progressEl = document.getElementById('progress');
+const pianoWrap  = document.getElementById('piano-wrap');
+const cardEl     = document.getElementById('card');
+const completeEl = document.getElementById('complete');
+
+let deck = [], current = 0, notesShown = false, autoTimer = null;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i+1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function accent(c) { return c.minor ? '#4fc3f7' : '#e94560'; }
+
+function showCard(idx) {
+  const c = deck[idx];
+  notesShown = false;
+
+  chordEl.textContent = c.name;
+  chordEl.className   = c.minor ? 'minor' : '';
+  notesEl.classList.remove('visible');
+  notesEl.textContent = '';          // 非表示にしてからテキストをクリア
+  pianoWrap.classList.remove('visible');
+
+  drawPiano([], accent(c));
+
+  fillEl.className = c.minor ? 'minor' : '';
+  fillEl.classList.remove('shrink');
+  void fillEl.offsetWidth;
+  fillEl.classList.add('shrink');
+
+  progressEl.textContent = `${idx+1} / ${deck.length}`;
+
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => reveal(c), 1000);
+}
+
+function reveal(c) {
+  notesShown = true;
+  notesEl.textContent = c.notes;    // 表示直前にテキストをセット
+  notesEl.classList.add('visible');
+  pianoWrap.classList.add('visible');
+  drawPiano(c.midi, accent(c));
+  playChord(c.midi);
+}
+
+function advance() {
+  if (completeEl.style.display === 'flex') return;
+  const c = deck[current];
+  if (!notesShown) {
+    if (autoTimer) clearTimeout(autoTimer);
+    reveal(c);
+  } else if (current < deck.length - 1) {
+    current++;
+    showCard(current);
+  } else {
+    if (autoTimer) clearTimeout(autoTimer);
+    cardEl.style.display     = 'none';
+    completeEl.style.display = 'flex';
+    progressEl.style.display = 'none';
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); advance(); }
+});
+document.addEventListener('click', e => {
+  if (e.target.id === 'restart-btn') return;
+  advance();
+});
+document.getElementById('restart-btn').addEventListener('click', () => {
+  deck    = shuffle(chords);
+  current = 0;
+  completeEl.style.display = 'none';
+  cardEl.style.display     = 'flex';
+  progressEl.style.display = 'block';
+  showCard(0);
+});
+
+// 初期化
+initCanvas();
+deck = shuffle(chords);
+drawPiano([], '#e94560');
+showCard(0);
+</script>
+</body>
+</html>
