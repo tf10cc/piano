@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>コード暗記フラッシュ</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -36,7 +37,7 @@
   }
 
   #chord-name {
-    font-size: 11rem;
+    font-size: min(55vw, 20rem);
     font-weight: 900;
     color: #e94560;
     line-height: 1;
@@ -48,35 +49,25 @@
     text-shadow: 0 0 60px rgba(79,195,247,0.35);
   }
 
-  #timer-bar {
-    width: 280px;
-    height: 5px;
-    background: #2a2a4a;
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  #timer-fill {
-    height: 100%;
-    width: 100%;
-    background: #e94560;
-    border-radius: 3px;
-    transform-origin: left;
-    transition: transform 1s linear;
-  }
-  #timer-fill.minor  { background: #4fc3f7; }
-  #timer-fill.shrink { transform: scaleX(0); }
 
   #notes {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    max-width: 600px;
     font-size: 3.5rem;
     font-weight: 700;
     color: #f0f0f0;
-    letter-spacing: 0.15em;
     min-height: 4.2rem;
     opacity: 0;
     transform: translateY(10px);
     transition: opacity 0.3s ease, transform 0.3s ease;
   }
   #notes.visible { opacity: 1; transform: translateY(0); }
+  .note-cell {
+    flex: 1;
+    text-align: center;
+  }
 
   #piano-wrap {
     opacity: 0;
@@ -131,7 +122,6 @@
 
 <div id="card">
   <div id="chord-name">C</div>
-  <div id="timer-bar"><div id="timer-fill"></div></div>
   <div id="notes">ドミソ</div>
   <div id="piano-wrap"><canvas id="piano"></canvas></div>
 </div>
@@ -142,7 +132,7 @@
   <button id="restart-btn">もう一度</button>
 </div>
 
-<div id="hint">スペース or クリックで次へ</div>
+<div id="hint">タップで答え表示 / もう一度タップで次へ</div>
 <div id="loading">♪ ピアノ音源 読み込み中...</div>
 
 <!-- Tone.js CDN -->
@@ -280,13 +270,12 @@ async function playChord(midiList) {
 // ─────────────────────────────────────────────
 const chordEl    = document.getElementById('chord-name');
 const notesEl    = document.getElementById('notes');
-const fillEl     = document.getElementById('timer-fill');
 const progressEl = document.getElementById('progress');
 const pianoWrap  = document.getElementById('piano-wrap');
 const cardEl     = document.getElementById('card');
 const completeEl = document.getElementById('complete');
 
-let deck = [], current = 0, notesShown = false, autoTimer = null;
+let deck = [], current = 0, notesShown = false;
 
 function shuffle(arr) {
   const a = [...arr];
@@ -299,6 +288,26 @@ function shuffle(arr) {
 
 function accent(c) { return c.minor ? '#4fc3f7' : '#e94560'; }
 
+function parseNotes(notesStr) {
+  const result = [];
+  let i = 0;
+  while (i < notesStr.length) {
+    let note = notesStr[i];
+    i++;
+    // ファ = フ＋ァ のように小文字カタカナは前の文字とセット
+    while (i < notesStr.length && /[ァィゥェォッャュョ]/.test(notesStr[i])) {
+      note += notesStr[i];
+      i++;
+    }
+    if (i < notesStr.length && (notesStr[i] === '♯' || notesStr[i] === '♭')) {
+      note += notesStr[i];
+      i++;
+    }
+    result.push(note);
+  }
+  return result;
+}
+
 function showCard(idx) {
   const c = deck[idx];
   notesShown = false;
@@ -306,25 +315,18 @@ function showCard(idx) {
   chordEl.textContent = c.name;
   chordEl.className   = c.minor ? 'minor' : '';
   notesEl.classList.remove('visible');
-  notesEl.textContent = '';          // 非表示にしてからテキストをクリア
+  notesEl.innerHTML = '';
   pianoWrap.classList.remove('visible');
 
   drawPiano([], accent(c));
 
-  fillEl.className = c.minor ? 'minor' : '';
-  fillEl.classList.remove('shrink');
-  void fillEl.offsetWidth;
-  fillEl.classList.add('shrink');
-
   progressEl.textContent = `${idx+1} / ${deck.length}`;
-
-  if (autoTimer) clearTimeout(autoTimer);
-  autoTimer = setTimeout(() => reveal(c), 1000);
 }
 
 function reveal(c) {
   notesShown = true;
-  notesEl.textContent = c.notes;    // 表示直前にテキストをセット
+  const noteArr = parseNotes(c.notes);
+  notesEl.innerHTML = noteArr.map(n => `<span class="note-cell">${n}</span>`).join('');
   notesEl.classList.add('visible');
   pianoWrap.classList.add('visible');
   drawPiano(c.midi, accent(c));
@@ -335,13 +337,11 @@ function advance() {
   if (completeEl.style.display === 'flex') return;
   const c = deck[current];
   if (!notesShown) {
-    if (autoTimer) clearTimeout(autoTimer);
     reveal(c);
   } else if (current < deck.length - 1) {
     current++;
     showCard(current);
   } else {
-    if (autoTimer) clearTimeout(autoTimer);
     cardEl.style.display     = 'none';
     completeEl.style.display = 'flex';
     progressEl.style.display = 'none';
